@@ -1,16 +1,8 @@
-use std::{borrow::Cow, clone};
-
 use eframe::egui;
-use egui::{ImageSource, Layout, Pos2, Rect, Sense, Vec2, Widget, load::Bytes};
-use egui_extras::Column;
-use typst_as_lib::{TypstEngine, TypstTemplateMainFile};
+use egui::{Layout, Vec2, Widget, load::Bytes};
+use typst_as_lib::TypstEngine;
 use typst_library::layout::PagedDocument;
 static FONT0: &[u8] = include_bytes!("../noto/NotoSans-Regular.ttf");
-static FONT1: &[u8] = include_bytes!("../noto/NotoSans-Bold.ttf");
-static FONT2: &[u8] = include_bytes!("../noto/NotoSans-Italic.ttf");
-static FONT3: &[u8] = include_bytes!("../fonts/AdwaitaMono-Regular.ttf");
-static FONT4: &[u8] = include_bytes!("../fonts/AdwaitaMono-Italic.ttf");
-static FONT5: &[u8] = include_bytes!("../fonts/AdwaitaMono-Bold.ttf");
 static URI: &str = "bytes://code.svg";
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
@@ -40,19 +32,22 @@ impl Default for MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui_extras::install_image_loaders(ctx);
-        self.render_svg();
         egui::CentralPanel::default().show(ctx, |ui| {
             ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
-                ctx.forget_all_images();
-                ui.add_sized(
-                    Vec2::new(ui.available_width() / 2.0, ui.available_height()),
-                    egui::TextEdit::multiline(&mut self.code)
-                        .font(egui::TextStyle::Monospace)
-                        .code_editor()
-                        .lock_focus(true),
-                );
-
+                if ui
+                    .add_sized(
+                        Vec2::new(ui.available_width() / 2.0, ui.available_height()),
+                        egui::TextEdit::multiline(&mut self.code)
+                            .font(egui::TextStyle::Monospace)
+                            .code_editor()
+                            .lock_focus(true),
+                    )
+                    .changed()
+                {
+                    egui_extras::install_image_loaders(ctx);
+                    self.render_svg();
+                    ctx.forget_all_images();
+                }
                 let i = egui::Image::from_bytes(std::borrow::Cow::Borrowed(URI), self.svg.clone());
                 ui.add_sized(ui.available_size(), i);
                 ui.allocate_space(ui.available_size());
@@ -65,7 +60,7 @@ impl MyApp {
     fn render_svg(&mut self) {
         let engine = TypstEngine::builder()
             .main_file(self.code.clone())
-            .fonts([FONT0, FONT1, FONT2, FONT3, FONT4, FONT5])
+            .fonts([FONT0])
             .build();
         if let Ok(d) = engine.compile::<PagedDocument>().output {
             let bytes: Vec<u8> = typst_svg::svg_merged(&d, typst_library::layout::Abs::zero())
