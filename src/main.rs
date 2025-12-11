@@ -1,0 +1,78 @@
+use std::{borrow::Cow, clone};
+
+use eframe::egui;
+use egui::{ImageSource, Layout, Pos2, Rect, Sense, Vec2, Widget, load::Bytes};
+use egui_extras::Column;
+use typst_as_lib::{TypstEngine, TypstTemplateMainFile};
+use typst_library::layout::PagedDocument;
+static FONT0: &[u8] = include_bytes!("../noto/NotoSans-Regular.ttf");
+static FONT1: &[u8] = include_bytes!("../noto/NotoSans-Bold.ttf");
+static FONT2: &[u8] = include_bytes!("../noto/NotoSans-Italic.ttf");
+static FONT3: &[u8] = include_bytes!("../fonts/AdwaitaMono-Regular.ttf");
+static FONT4: &[u8] = include_bytes!("../fonts/AdwaitaMono-Italic.ttf");
+static FONT5: &[u8] = include_bytes!("../fonts/AdwaitaMono-Bold.ttf");
+static URI: &str = "bytes://code.svg";
+fn main() -> eframe::Result {
+    let options = eframe::NativeOptions {
+        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        ..Default::default()
+    };
+    eframe::run_native(
+        "My egui App",
+        options,
+        Box::new(|_| Ok(Box::<MyApp>::default())),
+    )
+}
+
+struct MyApp {
+    code: String,
+    svg: Bytes,
+}
+
+impl Default for MyApp {
+    fn default() -> Self {
+        Self {
+            svg: egui::load::Bytes::from(Vec::new()),
+            code: "= Hello ".into(),
+        }
+    }
+}
+
+impl eframe::App for MyApp {
+    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        egui_extras::install_image_loaders(ctx);
+        self.render_svg();
+        egui::CentralPanel::default().show(ctx, |ui| {
+            ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
+                ctx.forget_all_images();
+                ui.add_sized(
+                    Vec2::new(ui.available_width() / 2.0, ui.available_height()),
+                    egui::TextEdit::multiline(&mut self.code)
+                        .font(egui::TextStyle::Monospace)
+                        .code_editor()
+                        .lock_focus(true),
+                );
+
+                let i = egui::Image::from_bytes(std::borrow::Cow::Borrowed(URI), self.svg.clone());
+                ui.add_sized(ui.available_size(), i);
+                ui.allocate_space(ui.available_size());
+            });
+        });
+    }
+}
+
+impl MyApp {
+    fn render_svg(&mut self) {
+        let engine = TypstEngine::builder()
+            .main_file(self.code.clone())
+            .fonts([FONT0, FONT1, FONT2, FONT3, FONT4, FONT5])
+            .build();
+        if let Ok(d) = engine.compile::<PagedDocument>().output {
+            let bytes: Vec<u8> = typst_svg::svg_merged(&d, typst_library::layout::Abs::zero())
+                .clone()
+                .as_bytes()
+                .into();
+            self.svg = egui::load::Bytes::from(bytes);
+        };
+    }
+}
