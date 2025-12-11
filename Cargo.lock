@@ -1068,9 +1068,11 @@ dependencies = [
 name = "editor"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "eframe",
  "egui",
  "egui_extras",
+ "typst",
  "typst-as-lib",
  "typst-library",
  "typst-svg",

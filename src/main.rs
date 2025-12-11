@@ -6,7 +6,7 @@ static FONT0: &[u8] = include_bytes!("../noto/NotoSans-Regular.ttf");
 static URI: &str = "bytes://code.svg";
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([320.0, 240.0]),
+        viewport: egui::ViewportBuilder::default(),
         ..Default::default()
     };
     eframe::run_native(
@@ -23,10 +23,12 @@ struct MyApp {
 
 impl Default for MyApp {
     fn default() -> Self {
-        Self {
+        let mut s = Self {
             svg: egui::load::Bytes::from(Vec::new()),
             code: "= Hello ".into(),
-        }
+        };
+        s.render_svg();
+        s
     }
 }
 
@@ -58,11 +60,16 @@ impl eframe::App for MyApp {
 
 impl MyApp {
     fn render_svg(&mut self) {
-        let engine = TypstEngine::builder()
-            .main_file(self.code.clone())
-            .fonts([FONT0])
-            .build();
-        if let Ok(d) = engine.compile::<PagedDocument>().output {
+        //let engine = TypstEngine::builder()
+        //    .main_file(self.code.clone())
+        //    .fonts([FONT0])
+        //    .build();
+        //if let Ok(d) = engine.compile::<PagedDocument>().output {
+        println!("{}", self.code);
+        let font = typst::text::Font::new(typst::foundations::Bytes::new(FONT0), 0).unwrap();
+        let fonts = [font];
+        let world = editor::TypstWorld::new(&fonts, self.code.clone(), "main".to_string());
+        if let Ok(d) = world.compile().output {
             let bytes: Vec<u8> = typst_svg::svg_merged(&d, typst_library::layout::Abs::zero())
                 .clone()
                 .as_bytes()
