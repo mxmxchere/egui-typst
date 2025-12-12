@@ -1,4 +1,5 @@
 use chrono::{DateTime, Datelike, Duration, Utc};
+use comemo::track;
 use egui::ahash::{HashMap, HashMapExt};
 use typst::diag::{SourceDiagnostic, Warned};
 use typst::ecow::EcoVec;
@@ -7,7 +8,7 @@ use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
 use typst::{Document, Library, LibraryExt};
-
+#[derive(Clone)]
 pub struct VirtualFS(HashMap<FileId, Source>);
 
 impl VirtualFS {
@@ -37,27 +38,27 @@ impl VirtualFS {
         }
     }
 }
-
-pub struct TypstWorld<'a> {
+#[derive(Clone)]
+pub struct TypstWorld {
     //<'a> {
     library: LazyHash<Library>, //main_source_id: FileId,
     now: DateTime<Utc>,
     fs: VirtualFS,
     //book: &'a LazyHash<FontBook>,
     //    file_resolvers: &'a [Box<dyn FileResolver + Send + Sync + 'static>],
-    fonts: &'a [Font],
+    fonts: Vec<Font>,
     initial_id: FileId,
     book: LazyHash<FontBook>,
 }
 
-impl<'a> TypstWorld<'a> {
-    pub fn new(fonts: &'a [Font], initial: String, initial_id: String) -> Self {
+impl TypstWorld {
+    pub fn new(fonts: Vec<Font>, initial: String, initial_id: String) -> Self {
         // None is probably not the play here, TODO
         let id = FileId::new(None, VirtualPath::new(initial_id));
         let mut fs = VirtualFS::new();
         fs.insert_file(id, initial);
         let mut book = FontBook::new();
-        for f in fonts {
+        for f in fonts.clone() {
             book.push(f.info().clone());
         }
         let book = LazyHash::new(book);
@@ -72,8 +73,7 @@ impl<'a> TypstWorld<'a> {
         }
     }
 }
-
-impl<'a> typst::World for TypstWorld<'a> {
+impl typst::World for TypstWorld {
     fn library(&self) -> &typst::utils::LazyHash<typst::Library> {
         &self.library
     }
@@ -118,7 +118,15 @@ impl From<EcoVec<SourceDiagnostic>> for MyErr {
         MyErr::Err
     }
 }
-impl<'a> TypstWorld<'a> {
+#[track]
+impl TypstWorld {
+    pub fn update_file(&mut self, path: String, content: String) {
+        let id = FileId::new(None, VirtualPath::new(path));
+        self.fs.insert_file(id, content); 
+    }
+}
+
+impl TypstWorld {
     pub fn compile<Doc: Document>(&self) -> Warned<Result<Doc, MyErr>> {
         let Warned { output, warnings } = typst::compile(self);
 

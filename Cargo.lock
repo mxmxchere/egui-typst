@@ -1069,6 +1069,7 @@ name = "editor"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "comemo",
  "eframe",
  "egui",
  "egui_extras",
