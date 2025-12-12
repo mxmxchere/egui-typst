@@ -122,7 +122,7 @@ impl From<EcoVec<SourceDiagnostic>> for MyErr {
 impl TypstWorld {
     pub fn update_file(&mut self, path: String, content: String) {
         let id = FileId::new(None, VirtualPath::new(path));
-        self.fs.insert_file(id, content); 
+        self.fs.insert_file(id, content);
     }
 }
 
@@ -134,5 +134,38 @@ impl TypstWorld {
             output: output.map_err(Into::into),
             warnings,
         }
+    }
+}
+
+use operational_transform::*;
+pub fn stringify(o: &Operation) -> String {
+    match o.clone() {
+        Operation::Delete(i) => format!("D;{}\n", i),
+        Operation::Retain(i) => format!("R;{}\n", i),
+        Operation::Insert(s) => format!("I;{}\n", s),
+    }
+}
+
+pub fn destringify(s: String) -> Option<Operation> {
+    let str = s.as_bytes();
+    if str.len() < 4 {
+        return None;
+    }
+    match str[0] {
+        68 => Some(Operation::Delete(
+            s.strip_suffix("\n")
+                .unwrap()
+                .strip_prefix("D;")
+                .unwrap()
+                .parse::<u64>()
+                .unwrap(),
+        )),
+        82 => Some(Operation::Retain(
+            s.trim().strip_prefix("R;").unwrap().parse::<u64>().unwrap(),
+        )),
+        73 => Some(Operation::Insert(
+            s.strip_prefix("I;").unwrap().trim().to_string(),
+        )),
+        _ => None,
     }
 }
