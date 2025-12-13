@@ -1,13 +1,11 @@
 use chrono::{DateTime, Datelike, Duration, Utc};
 use comemo::track;
 use egui::ahash::{HashMap, HashMapExt};
-use typst::diag::{SourceDiagnostic, Warned};
-use typst::ecow::EcoVec;
 use typst::foundations::Datetime;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
 use typst::utils::LazyHash;
-use typst::{Document, Library, LibraryExt};
+use typst::{Library, LibraryExt};
 #[derive(Clone)]
 pub struct VirtualFS(HashMap<FileId, Source>);
 
@@ -109,31 +107,12 @@ impl typst::World for TypstWorld {
         Some(self.fonts[index].clone())
     }
 }
-pub enum MyErr {
-    Err,
-}
 
-impl From<EcoVec<SourceDiagnostic>> for MyErr {
-    fn from(_: EcoVec<SourceDiagnostic>) -> Self {
-        MyErr::Err
-    }
-}
 #[track]
 impl TypstWorld {
     pub fn update_file(&mut self, path: String, content: String) {
         let id = FileId::new(None, VirtualPath::new(path));
         self.fs.insert_file(id, content);
-    }
-}
-
-impl TypstWorld {
-    pub fn compile<Doc: Document>(&self) -> Warned<Result<Doc, MyErr>> {
-        let Warned { output, warnings } = typst::compile(self);
-
-        Warned {
-            output: output.map_err(Into::into),
-            warnings,
-        }
     }
 }
 

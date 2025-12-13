@@ -133,24 +133,30 @@ impl MyApp {
         self.world
             .update_file("main".to_string(), self.code.clone());
         let now = std::time::Instant::now();
-        if let Ok(d) = self.world.compile::<PagedDocument>().output {
-            let duration = now.elapsed().as_millis();
-            println!("Took {}ms to compile", duration);
-            let current_pages: [Option<&Page>; 2] = [
-                d.pages.get(self.current_page),
-                d.pages.get(self.current_page + 1),
-            ];
-            if let Some(p) = current_pages[0] {
-                let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
-                self.svg[0] = Some(egui::load::Bytes::from(bytes));
-            } else {
-                self.svg[0] = None;
+        let warned = typst::compile::<PagedDocument>(&self.world);
+        match warned.output {
+            Ok(d) => {
+                let duration = now.elapsed().as_millis();
+                println!("Took {}ms to compile", duration);
+                let current_pages: [Option<&Page>; 2] = [
+                    d.pages.get(self.current_page),
+                    d.pages.get(self.current_page + 1),
+                ];
+                if let Some(p) = current_pages[0] {
+                    let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
+                    self.svg[0] = Some(egui::load::Bytes::from(bytes));
+                } else {
+                    self.svg[0] = None;
+                }
+                if let Some(p) = current_pages[1] {
+                    let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
+                    self.svg[1] = Some(egui::load::Bytes::from(bytes));
+                } else {
+                    self.svg[1] = None;
+                }
             }
-            if let Some(p) = current_pages[1] {
-                let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
-                self.svg[1] = Some(egui::load::Bytes::from(bytes));
-            } else {
-                self.svg[1] = None;
+            Err(e) => {
+                eprintln!("{:?}", e)
             }
         };
     }
