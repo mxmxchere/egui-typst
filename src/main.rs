@@ -1,7 +1,12 @@
 use editor::TypstWorld;
 use eframe::egui;
 use egui::{Color32, Layout, Vec2, load::Bytes};
-use typst::layout::{Page, PagedDocument};
+use itertools::Itertools;
+use typst::ecow::EcoVec;
+use typst::{
+    diag::SourceDiagnostic,
+    layout::{Page, PagedDocument},
+};
 static FONT0: &[u8] = include_bytes!("../noto/NotoSans-Regular.ttf");
 static URI: &str = "bytes://code.svg";
 static URI_2: &str = "bytes://code2.svg";
@@ -18,12 +23,17 @@ fn main() -> eframe::Result {
     )
 }
 
+struct RenderInfo {
+    took: u128,
+    messages: Result<(), EcoVec<SourceDiagnostic>>,
+}
 struct MyApp {
     code: String,
     svg: [Option<Bytes>; 2],
     world: TypstWorld,
     y_offset: f32,
     current_page: usize,
+    render_info: RenderInfo,
 }
 impl MyApp {
     fn new() -> Self {
@@ -37,6 +47,10 @@ impl MyApp {
             world: world,
             y_offset: 0.0,
             current_page: 0,
+            render_info: RenderInfo {
+                took: 0,
+                messages: Ok(()),
+            },
         };
         s.render_svg();
         s
@@ -45,6 +59,21 @@ impl MyApp {
 
 impl eframe::App for MyApp {
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        // Bottom panel with diagnostic messages
+        egui::TopBottomPanel::bottom("my_panel").show(ctx, |ui| {
+            let text: String = match &self.render_info.messages {
+                Ok(_) => format!("Ok - took {}ms to compile", self.render_info.took),
+                Err(e) => Itertools::intersperse(
+                    e.iter()
+                        .map(|sd| format!("{:?} - {}", sd.severity, sd.message)),
+                    "\n".into(),
+                )
+                .collect(),
+            };
+            ui.label(text);
+        });
+
+        // Editor and rendered Document
         egui::CentralPanel::default().show(ctx, |ui| {
             egui_extras::install_image_loaders(ctx);
             ui.with_layout(Layout::left_to_right(egui::Align::Center), |ui| {
@@ -134,30 +163,27 @@ impl MyApp {
             .update_file("main".to_string(), self.code.clone());
         let now = std::time::Instant::now();
         let warned = typst::compile::<PagedDocument>(&self.world);
+        let duration = now.elapsed().as_millis();
+        self.render_info.took = duration;
         match warned.output {
             Ok(d) => {
-                let duration = now.elapsed().as_millis();
                 println!("Took {}ms to compile", duration);
                 let current_pages: [Option<&Page>; 2] = [
                     d.pages.get(self.current_page),
                     d.pages.get(self.current_page + 1),
                 ];
-                if let Some(p) = current_pages[0] {
-                    let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
-                    self.svg[0] = Some(egui::load::Bytes::from(bytes));
-                } else {
-                    self.svg[0] = None;
+                // generalize so that this is the amount of pages visible...
+                for i in 0..=1 {
+                    if let Some(p) = current_pages[i] {
+                        let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
+                        self.svg[i] = Some(egui::load::Bytes::from(bytes));
+                    } else {
+                        self.svg[i] = None;
+                    }
                 }
-                if let Some(p) = current_pages[1] {
-                    let bytes: Vec<u8> = typst_svg::svg(p).clone().as_bytes().into();
-                    self.svg[1] = Some(egui::load::Bytes::from(bytes));
-                } else {
-                    self.svg[1] = None;
-                }
+                self.render_info.messages = Ok(());
             }
-            Err(e) => {
-                eprintln!("{:?}", e)
-            }
+            Err(e) => self.render_info.messages = Err(e),
         };
     }
 }
