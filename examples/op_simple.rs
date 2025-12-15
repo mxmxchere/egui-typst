@@ -7,16 +7,22 @@ fn main() {
     let mut clients = Clients::new();
     let c_1_handle = clients.register_client(client_1);
     let c_2_handle = clients.register_client(client_2);
-    clients.move_cursor(4, c_1_handle);
-    clients.insert_at_cursor("hello".to_string(), c_1_handle);
-    println!("{}", clients.content(c_1_handle));
-    clients.move_cursor(-1, c_1_handle);
-    clients.insert_at_cursor("n".to_string(), c_1_handle);
-    println!("{}", clients.content(c_1_handle));
+
+    //clients.move_cursor(4, c_1_handle); // does nothing
+    clients.insert_at_cursor("heklo".to_string(), c_1_handle);
+
+    //clients.insert_at_cursor("bye".to_string(), c_2_handle);
+    //let (c, r) = clients.push_current_changes(c_2_handle);
+    //server.receive_changes(c, r as usize, c_2_handle, &mut clients);
+
+    println!("Client state: {}", clients.content(c_1_handle));
+    clients.move_cursor(-2, c_1_handle);
+    clients.remove_at_cursor(c_1_handle);
+    clients.insert_at_cursor("l".to_string(), c_1_handle);
+    println!("Client state: {}", clients.content(c_1_handle));
     let (c, r) = clients.push_current_changes(c_1_handle);
-    server.receive_changes(c, r as usize, &clients);
-    println!("{}", server.content());
-     
+    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+    println!("Server state: {}", server.content());
 }
 #[derive(Clone)]
 struct Client {
@@ -29,7 +35,13 @@ struct Client {
 
 impl Client {
     pub fn new() -> Self {
-        Self { content: String::new(), state: OperationSeq::default(), outstanding_ops: OperationSeq::default(), revision: 0, cursor_position: 0 }
+        Self {
+            content: String::new(),
+            state: OperationSeq::default(),
+            outstanding_ops: OperationSeq::default(),
+            revision: 0,
+            cursor_position: 0,
+        }
     }
 
     pub fn move_cursor(&mut self, delta: isize) {
@@ -51,36 +63,73 @@ impl Client {
         self.cursor_position += s.len() as isize;
         self.outstanding_ops = self.outstanding_ops.compose(&operation).unwrap();
     }
-    
+
+    pub fn remove_at_cursor(&mut self) {
+        let mut operation = OperationSeq::default();
+        operation.retain(self.cursor_position as u64 - 1);
+        operation.delete(1);
+        operation.retain(self.content.len() as u64 - self.cursor_position as u64);
+        self.cursor_position -= 1;
+        self.content = operation.apply(&self.content).unwrap();
+        self.outstanding_ops = self.outstanding_ops.compose(&operation).unwrap();
+    }
+
     pub fn content(&self) -> String {
         self.content.clone()
     }
 
     // Eventually this somehow sends this to server but for now
     // i'm manually plumbing things so let's see...
-    pub fn push_current_changes(&self) -> (OperationSeq, u64) {
-        (self.outstanding_ops.clone(), self.revision)
-    } 
+    pub fn push_current_changes(&mut self) -> (OperationSeq, u64) {
+        let r = (self.outstanding_ops.clone(), self.revision);
+        self.outstanding_ops = OperationSeq::default();
+        r
+    }
 
+    pub fn ack(&mut self, rev: usize) {
+        self.revision = rev as u64;
+    }
 }
 
 struct Server {
     revisions: Vec<OperationSeq>,
     text: String,
-    clients: Vec<Client>,
+    //clients: Vec<Client>,
 }
 
 impl Server {
     pub fn new() -> Self {
-       Self { revisions: vec![], text: String::new(), clients: vec![] } 
+        Self {
+            revisions: vec![],
+            text: String::new(),
+            //   clients: vec![],
+        }
     }
 
-    pub fn receive_changes(&mut self,mut changes: OperationSeq, revision: usize, client: &Clients) {
-        for op in &self.revisions[revision..] {
-            changes = changes.transform(&op).unwrap().0;
+    pub fn receive_changes(
+        &mut self,
+        mut changes: OperationSeq,
+        revision: usize,
+        handle: usize,
+        clients: &mut Clients,
+    ) {
+        if revision == self.revisions.len() {
+            for op in &self.revisions[revision..] {
+                changes = changes.transform(&op).unwrap().0;
+            }
+            self.text = changes.apply(&self.text).unwrap();
+            self.revisions.push(changes);
+            clients.ack(handle, self.revisions.len());
+            for c in clients.0.iter() {
+                c.receive_changes();
+            }
+        } else {
+            for r in self.revisions[revision..].iter() {
+                let (a_p, b_p) = r.transform(&changes).unwrap();
+
+                todo!()
+            }
         }
-        self.text = changes.apply(&self.text).unwrap();
-        self.revisions.push(changes);
     }
 
     pub fn content(&self) -> String {
@@ -106,14 +155,21 @@ impl Clients {
     pub fn insert_at_cursor(&mut self, s: String, handle: usize) {
         self.0[handle].insert_at_cursor(s);
     }
-    
+    pub fn remove_at_cursor(&mut self, handle: usize) {
+        self.0[handle].remove_at_cursor();
+    }
+
     pub fn content(&self, handle: usize) -> String {
         self.0[handle].content()
     }
 
     // Eventually this somehow sends this to server but for now
     // i'm manually plumbing things so let's see...
-    pub fn push_current_changes(&self, handle: usize) -> (OperationSeq, u64) {
+    pub fn push_current_changes(&mut self, handle: usize) -> (OperationSeq, u64) {
         self.0[handle].push_current_changes()
-    } 
+    }
+
+    pub fn ack(&mut self, handle: usize, rev: usize) {
+        self.0[handle].ack(rev)
+    }
 }
