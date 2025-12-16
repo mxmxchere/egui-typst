@@ -11,7 +11,7 @@ fn main() {
     //clients.move_cursor(4, c_1_handle); // does nothing
     clients.insert_at_cursor("heklo".to_string(), c_1_handle);
 
-    //clients.insert_at_cursor("bye".to_string(), c_2_handle);
+    clients.insert_at_cursor("bye".to_string(), c_2_handle);
     //let (c, r) = clients.push_current_changes(c_2_handle);
     //server.receive_changes(c, r as usize, c_2_handle, &mut clients);
 
@@ -22,6 +22,15 @@ fn main() {
     println!("Client state: {}", clients.content(c_1_handle));
     let (c, r) = clients.push_current_changes(c_1_handle);
     server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+    println!("Server state: {}", server.content());
+    println!("Client 2 state: {}", clients.content(c_2_handle));
+
+    let (c, r) = clients.push_current_changes(c_2_handle);
+    server.receive_changes(c, r as usize, c_2_handle, &mut clients);
+
+    println!("Final: ");
+    println!("Client 1 state: {}", clients.content(c_1_handle));
+    println!("Client 2 state: {}", clients.content(c_2_handle));
     println!("Server state: {}", server.content());
 }
 #[derive(Clone)]
@@ -83,10 +92,25 @@ impl Client {
     pub fn push_current_changes(&mut self) -> (OperationSeq, u64) {
         let r = (self.outstanding_ops.clone(), self.revision);
         self.outstanding_ops = OperationSeq::default();
+        // i think this is needed so we can transform these later down the line
+        self.outstanding_ops.retain(self.content.len() as u64);
         r
     }
 
-    pub fn ack(&mut self, rev: usize) {
+    pub fn receive_changes(&mut self, changes: &OperationSeq, rev: u64) {
+        println!("receiving changes");
+        //let (a_p, b_p) = self.outstanding_ops.transform(changes).unwrap();
+        println!("{:?}, {:?}", self.outstanding_ops, changes);
+        self.state = self.state.compose(&changes).unwrap();
+        let (a_p, b_p) = self.outstanding_ops.transform(&changes).unwrap();
+        println!("{:?}, {:?}", a_p, b_p);
+        self.outstanding_ops = a_p;
+        self.content = b_p.apply(&self.content).unwrap();
+        self.revision = rev;
+    }
+
+    pub fn ack(&mut self, rev_changes: &OperationSeq, rev: usize) {
+        self.state = rev_changes.clone();
         self.revision = rev as u64;
     }
 }
@@ -118,16 +142,17 @@ impl Server {
                 changes = changes.transform(&op).unwrap().0;
             }
             self.text = changes.apply(&self.text).unwrap();
-            self.revisions.push(changes);
-            clients.ack(handle, self.revisions.len());
-            for c in clients.0.iter() {
-                c.receive_changes();
+            for (i, c) in clients.0.iter_mut().enumerate() {
+                if i != handle {
+                    c.receive_changes(&changes, revision as u64 + 1);
+                }
             }
+            clients.ack(handle, &changes, self.revisions.len());
+            self.revisions.push(changes);
         } else {
             for r in self.revisions[revision..].iter() {
                 let (a_p, b_p) = r.transform(&changes).unwrap();
-
-                todo!()
+                changes.transform(&b_p).ok();
             }
         }
     }
@@ -169,7 +194,7 @@ impl Clients {
         self.0[handle].push_current_changes()
     }
 
-    pub fn ack(&mut self, handle: usize, rev: usize) {
-        self.0[handle].ack(rev)
+    pub fn ack(&mut self, handle: usize, changes: &OperationSeq, rev: usize) {
+        self.0[handle].ack(changes, rev)
     }
 }
