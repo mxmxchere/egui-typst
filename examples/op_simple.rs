@@ -32,10 +32,12 @@ fn main() {
     // the callback on server-side or whatever
     server.receive_changes(c, r as usize, c_1_handle, &mut clients);
 
+    // Client 1 makes more changes (insert !! at end of "hello")
     clients.move_cursor(10, c_1_handle); // Move cursor to the end just, this will overflow but
     // that should be handled by the implementation
     clients.insert_at_cursor("!!".to_string(), c_1_handle);
-    
+   
+    // Client 1 pushes the changes (this should make client 2 fall even more behind)
     let (c, r) = clients.push_current_changes(c_1_handle);
     server.receive_changes(c, r as usize, c_1_handle, &mut clients);
 
@@ -46,6 +48,27 @@ fn main() {
 
     let (c, r) = clients.push_current_changes(c_2_handle);
     server.receive_changes(c, r as usize, c_2_handle, &mut clients);
+
+    // Edgecase here, assume that the client sends some changes, but before it receives an ACK,
+    // the server receives something from another client, and "commits" that first
+
+    // Client 2 removes the "bye" locally
+    clients.remove_at_cursor(c_2_handle);
+    clients.remove_at_cursor(c_2_handle);
+    clients.remove_at_cursor(c_2_handle);
+
+
+    let (c_inflight, r_inflight) = clients.push_current_changes(c_2_handle);
+
+    // Again, move Client A cursor as far to the right as possible
+    clients.move_cursor(10, c_1_handle);
+    // Remove one of the exclamation marks 
+    clients.remove_at_cursor(c_1_handle);
+    // Push the changes to server and receive them
+    let (c, r) = clients.push_current_changes(c_1_handle);
+    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+
+    server.receive_changes(c_inflight, r_inflight as usize, c_2_handle, &mut clients);
 
     println!("Final: ");
     println!("Client 1 state: {}", clients.content(c_1_handle));
@@ -110,14 +133,10 @@ impl Client {
     // i'm manually plumbing things so let's see...
     pub fn push_current_changes(&mut self) -> (OperationSeq, u64) {
         let r = (self.outstanding_ops.clone(), self.revision);
-        self.outstanding_ops = OperationSeq::default();
-        // i think this is needed so we can transform these later down the line
-        self.outstanding_ops.retain(self.content.len() as u64);
         r
     }
 
     pub fn receive_changes(&mut self, changes: &OperationSeq, rev: u64) {
-        //let (a_p, b_p) = self.outstanding_ops.transform(changes).unwrap();
         self.state = self.state.compose(&changes).unwrap();
         let (a_p, b_p) = self.outstanding_ops.transform(&changes).unwrap();
         self.outstanding_ops = a_p;
@@ -126,6 +145,8 @@ impl Client {
     }
 
     pub fn ack(&mut self, rev_changes: &OperationSeq, rev: usize) {
+        self.outstanding_ops = OperationSeq::default();
+        self.outstanding_ops.retain(self.content.len() as u64);
         self.state = rev_changes.clone();
         self.revision = rev as u64;
     }
