@@ -8,22 +8,33 @@ fn main() {
     let c_1_handle = clients.register_client(client_1);
     let c_2_handle = clients.register_client(client_2);
 
-    //clients.move_cursor(4, c_1_handle); // does nothing
+    // Client 1 makes some local changes (insert heklo at 0)
+    // and does not push them
     clients.insert_at_cursor("heklo".to_string(), c_1_handle);
 
+    // Client 2 makes some local changes and does not push them
     clients.insert_at_cursor("bye".to_string(), c_2_handle);
-    //let (c, r) = clients.push_current_changes(c_2_handle);
-    //server.receive_changes(c, r as usize, c_2_handle, &mut clients);
 
-    println!("Client state: {}", clients.content(c_1_handle));
+    println!("Client A state: {}", clients.content(c_1_handle));
+    println!("Client B state: {}", clients.content(c_2_handle));
+
+    // Client 1 makes more local changes (fix the typo, heklo -> hello)
     clients.move_cursor(-2, c_1_handle);
     clients.remove_at_cursor(c_1_handle);
     clients.insert_at_cursor("l".to_string(), c_1_handle);
-    println!("Client state: {}", clients.content(c_1_handle));
+
+    println!("Client A state: {}", clients.content(c_1_handle));
+    println!("Client B state: {}", clients.content(c_2_handle));
+
+    // Client 1 now pushes changes to server.
     let (c, r) = clients.push_current_changes(c_1_handle);
+    // The server receives the changes (i am manual plumbing this, this would be)
+    // the callback on server-side or whatever
     server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+
+    println!("Client A state: {}", clients.content(c_1_handle));
+    println!("Client B state: {}", clients.content(c_2_handle));
     println!("Server state: {}", server.content());
-    println!("Client 2 state: {}", clients.content(c_2_handle));
 
     let (c, r) = clients.push_current_changes(c_2_handle);
     server.receive_changes(c, r as usize, c_2_handle, &mut clients);
@@ -98,12 +109,9 @@ impl Client {
     }
 
     pub fn receive_changes(&mut self, changes: &OperationSeq, rev: u64) {
-        println!("receiving changes");
         //let (a_p, b_p) = self.outstanding_ops.transform(changes).unwrap();
-        println!("{:?}, {:?}", self.outstanding_ops, changes);
         self.state = self.state.compose(&changes).unwrap();
         let (a_p, b_p) = self.outstanding_ops.transform(&changes).unwrap();
-        println!("{:?}, {:?}", a_p, b_p);
         self.outstanding_ops = a_p;
         self.content = b_p.apply(&self.content).unwrap();
         self.revision = rev;
