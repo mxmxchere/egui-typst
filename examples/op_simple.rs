@@ -109,10 +109,95 @@ fn main() {
     println!("---- END FINAL STATE ----");
 
     // Now for the example from the article:
-    let server = Server::new();
+    let mut server = Server::new();
     let client_a = Client::new();
     let client_b = Client::new();
-    let clients = Clients::new();
+    let mut clients = Clients::new();
+
+    let client_a_handle = clients.register_client(client_a);
+    let client_b_handle = clients.register_client(client_b);
+
+    // Insert the initial string through just client
+    clients.insert_at_cursor("go".to_string(), c_a_handle);
+    let (c, r) = clients.push_current_changes(c_a_handle);
+    server.receive_changes(c, r as usize, c_a_handle, &mut clients);
+
+    println!("----- INITIAL STATE -----");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("--- END INITIAL STATE ---");
+
+    // Caret of client A is already at the end of the buffer
+    clients.insert_at_cursor("a".to_string(), c_a_handle);
+    // this is just moving the CARET of client B to follow the example, nothing to do with the OT really
+    clients.move_cursor(2, c_b_handle);
+    clients.insert_at_cursor("t".to_string(), c_b_handle);
+
+    let (changes_a, rev_a) = clients.push_current_changes(c_a_handle);
+    let (changes_b, rev_b) = clients.push_current_changes(c_b_handle);
+
+    server.receive_changes(changes_b, rev_b as usize, c_b_handle, &mut clients);
+    server.receive_changes(changes_a, rev_a as usize, c_a_handle, &mut clients);
+
+
+    println!("----- EX1 -----");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("--- END EX1 ---");
+
+    // I am skipping everything until client/server asymmetry, it's a trivial example
+    // already shown above
+    //
+
+    /*  The remainder does not quite work yet, i'm pushing for state keeping
+
+    clients.insert_at_cursor("s".to_string(), c_a_handle);
+    // just move to the beginning, caret will not underflow
+    clients.move_cursor(-3, c_a_handle);
+    let (changes_a, parent_rev_a) = clients.push_current_changes(c_a_handle);
+    
+    clients.remove_at_cursor(c_a_handle);
+
+    clients.move_cursor(1, c_b_handle);
+    clients.insert_at_cursor("e".to_string(), c_b_handle);
+    let (changes_c, parent_rev_c) = clients.push_current_changes(c_b_handle);
+    println!("{:?}", changes_c);
+    let messages_c = server.receive_changes_lazy(changes_c, parent_rev_c as usize, c_b_handle, &mut clients);
+    clients.insert_at_cursor("d".to_string(), c_b_handle);
+    let (changes_d, parent_rev_d) = clients.push_current_changes(c_b_handle);
+    println!("{:?}", changes_d);
+    let messages_d = server.receive_changes_lazy(changes_d, parent_rev_d as usize, c_b_handle, &mut clients);
+    
+    for (i, message) in messages_c.iter().enumerate() {
+        match message {
+            ServerToClientMessage::Change(_,_) => { // For now skip forwarding this to client a
+             }
+            ServerToClientMessage::Ack(ops, rev) => {
+               clients.ack(i, ops, *rev); 
+            }
+        }
+    }
+    for (i, message) in messages_d.iter().enumerate() {
+        match message {
+            ServerToClientMessage::Change(_,_) => { // For now skip forwarding this to client a
+             }
+            ServerToClientMessage::Ack(ops, rev) => {
+               clients.ack(i, ops, *rev); 
+            }
+        }
+    }
+
+    println!("----- EX2 -----");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("--- END EX2 ---");
+    */
+
+    
+
 }
 #[derive(Clone)]
 struct Client {
@@ -197,6 +282,11 @@ struct Server {
     //clients: Vec<Client>,
 }
 
+enum ServerToClientMessage {
+    Ack(OperationSeq, usize),
+    Change(OperationSeq, usize)
+}
+
 impl Server {
     pub fn new() -> Self {
         Self {
@@ -239,6 +329,50 @@ impl Server {
             }
             clients.ack(handle, &changes, self.revisions.len());
             self.revisions.push(changes)
+        }
+    }
+
+    // This handles the case where the Server is slow with relaying received changes to other
+    // clients
+    pub fn receive_changes_lazy(
+        &mut self,
+        mut changes: OperationSeq,
+        revision: usize,
+        handle: usize,
+        clients: &mut Clients,
+    ) ->Vec<ServerToClientMessage> {
+        let mut messages = vec![];
+        if revision == self.revisions.len() {
+            self.text = changes.apply(&self.text).unwrap();
+            for (i, _) in clients.0.iter_mut().enumerate() {
+                if i != handle {
+                    messages.push(ServerToClientMessage::Change(changes.clone(), self.revisions.len()));
+                }
+                else {
+                    messages.push(ServerToClientMessage::Ack(changes.clone(), self.revisions.len()))
+                }
+            }
+            self.revisions.push(changes);
+            messages
+        } else {
+            // i think +1 here makes sense somehow...
+            for r in self.revisions[revision+1..].iter() {
+
+                let (a_p, _) = changes.transform(&r).unwrap();
+                changes = a_p;
+                //println!("OK");
+                //changes.transform(&b_p).ok();
+            }
+            self.text = changes.apply(&self.text).unwrap();
+            for (i, _) in clients.0.iter_mut().enumerate() {
+                if i != handle {
+                    messages.push(ServerToClientMessage::Change(changes.clone(), self.revisions.len()))
+                } else {
+                    messages.push(ServerToClientMessage::Ack(changes.clone(), self.revisions.len()));
+                }
+            }
+            self.revisions.push(changes);
+            messages
         }
     }
 
