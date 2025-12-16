@@ -2,7 +2,8 @@ use editor::TypstWorld;
 use iced::Length::Fill;
 use iced::Padding;
 use iced::advanced::image::Handle;
-use iced::widget::{column, image, row, scrollable, text_editor};
+use iced::widget::image::FilterMethod;
+use iced::widget::{column, container, image, row, scrollable, slider, text_editor, toggler};
 use iced::{Element, widget::text_editor::Content};
 use typst::layout::PagedDocument;
 
@@ -19,6 +20,8 @@ struct State {
     editor_content: text_editor::Content,
     images: Vec<Handle>,
     world: TypstWorld,
+    pixel_per_pt: f32,
+    aliasing: bool,
 }
 
 impl Default for State {
@@ -29,6 +32,8 @@ impl Default for State {
             editor_content: Content::with_text(START_TEXT),
             world: editor::TypstWorld::new(fonts, START_TEXT.to_string(), "main".to_string()),
             images: Vec::default(),
+            pixel_per_pt: 1.0,
+            aliasing: true,
         }
     }
 }
@@ -37,6 +42,8 @@ impl Default for State {
 #[derive(Debug, Clone)]
 enum Message {
     Edit(text_editor::Action),
+    PPP(f32),
+    AliasingToggled(bool),
 }
 
 impl State {
@@ -44,6 +51,8 @@ impl State {
     fn update(&mut self, message: Message) {
         match message {
             Message::Edit(a) => self.editor_content.perform(a),
+            Message::PPP(f) => self.pixel_per_pt = f,
+            Message::AliasingToggled(b) => self.aliasing = b,
         }
         self.world
             .update_file("main".to_string(), self.editor_content.text());
@@ -59,7 +68,13 @@ impl State {
                     // to get the pixels directly to be painted by iced (or whatever is doing it)
                     // TODO, set an appropriate rendering accuracy here, depending on the window size
                     // maybe
-                    .map(|p| Handle::from_bytes(typst_render::render(p, 4.0).encode_png().unwrap()))
+                    .map(|p| {
+                        Handle::from_bytes(
+                            typst_render::render(p, self.pixel_per_pt)
+                                .encode_png()
+                                .unwrap(),
+                        )
+                    })
                     .collect();
             }
             Err(e) => println!("{:?}", e),
@@ -77,21 +92,36 @@ impl State {
             ]
             .width(Fill),
             // display all byte-images in self.images with a little gap
-            scrollable(
-                column(
-                    self.images
-                        .iter()
-                        .map(|i| { image(&*i).filter_method(image::FilterMethod::Linear).into() })
-                )
+            column![
+                row![
+                    slider(0.1..=5.0, self.pixel_per_pt, Message::PPP).step(0.5),
+                    toggler(self.aliasing)
+                        .label("Aliasing")
+                        .on_toggle(Message::AliasingToggled)
+                ]
                 .spacing(10)
-                .padding(Padding {
-                    top: 10.0,
-                    bottom: 10.0,
-                    left: 10.0,
-                    right: 20.0 // this is a hack for the scrollbar
-                })
-                .width(Fill)
-            ) // i'm a bit proud of this beast
+            ]
+            .spacing(10)
+            .padding(Padding {
+                top: 10.0,
+                bottom: 10.0,
+                left: 10.0,
+                right: 10.0
+            })
+            .width(Fill)
+            .push(
+                container(
+                    scrollable(column(self.images.iter().map(|i| {
+                        image(&*i)
+                            .filter_method(match self.aliasing {
+                                true => FilterMethod::Linear,
+                                false => FilterMethod::Nearest,
+                            })
+                            .into()
+                    }))) // i'm a bit proud of this beast
+                )
+                .center_x(Fill)
+            )
         ]
         .into()
     }
