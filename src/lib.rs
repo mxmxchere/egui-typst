@@ -1,6 +1,6 @@
 use chrono::{DateTime, Datelike, Duration, Utc};
 use comemo::track;
-use egui::ahash::{HashMap, HashMapExt};
+use std::collections::HashMap;
 use typst::foundations::Datetime;
 use typst::syntax::{FileId, Source, VirtualPath};
 use typst::text::{Font, FontBook};
