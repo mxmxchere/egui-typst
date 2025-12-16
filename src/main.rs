@@ -3,16 +3,12 @@ use iced::Length::Fill;
 use iced::Padding;
 use iced::advanced::image::Handle;
 use iced::widget::image::FilterMethod;
-use iced::widget::{column, container, image, row, scrollable, slider, text_editor, toggler};
+use iced::widget::{column, container, image, row, scrollable, slider, text, text_editor, toggler};
 use iced::{Element, widget::text_editor::Content};
 use typst::layout::PagedDocument;
 
 static FONT0: &[u8] = include_bytes!("../noto/NotoSans-Regular.ttf");
-static START_TEXT: &str = "#show heading: set align(center)
-#show heading: set text(size: 30pt)
-#set par(justify: true)
-= Hello World!
-#lorem(500)";
+static START_TEXT: &str = include_str!("../demo.typ");
 
 // State
 #[derive(Clone)]
@@ -94,7 +90,8 @@ impl State {
             // display all byte-images in self.images with a little gap
             column![
                 row![
-                    slider(0.1..=5.0, self.pixel_per_pt, Message::PPP).step(0.5),
+                    text(format!("Pixel per pt.: {}", self.pixel_per_pt)),
+                    slider(0.1..=5.0, self.pixel_per_pt, Message::PPP).step(0.01),
                     toggler(self.aliasing)
                         .label("Aliasing")
                         .on_toggle(Message::AliasingToggled)
@@ -111,14 +108,17 @@ impl State {
             .width(Fill)
             .push(
                 container(
-                    scrollable(column(self.images.iter().map(|i| {
-                        image(&*i)
-                            .filter_method(match self.aliasing {
-                                true => FilterMethod::Linear,
-                                false => FilterMethod::Nearest,
-                            })
-                            .into()
-                    }))) // i'm a bit proud of this beast
+                    scrollable(
+                        column(self.images.iter().map(|i| {
+                            image(&*i)
+                                .filter_method(match self.aliasing {
+                                    true => FilterMethod::Linear,
+                                    false => FilterMethod::Nearest,
+                                })
+                                .into()
+                        }))
+                        .spacing(10)
+                    ) // i'm a bit proud of this beast
                 )
                 .center_x(Fill)
             )
