@@ -32,6 +32,14 @@ fn main() {
     // the callback on server-side or whatever
     server.receive_changes(c, r as usize, c_1_handle, &mut clients);
 
+    clients.move_cursor(10, c_1_handle); // Move cursor to the end just, this will overflow but
+    // that should be handled by the implementation
+    clients.insert_at_cursor("!!".to_string(), c_1_handle);
+    
+    let (c, r) = clients.push_current_changes(c_1_handle);
+    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+
+
     println!("Client A state: {}", clients.content(c_1_handle));
     println!("Client B state: {}", clients.content(c_2_handle));
     println!("Server state: {}", server.content());
@@ -149,16 +157,29 @@ impl Server {
             self.text = changes.apply(&self.text).unwrap();
             for (i, c) in clients.0.iter_mut().enumerate() {
                 if i != handle {
-                    c.receive_changes(&changes, revision as u64 + 1);
+                    c.receive_changes(&changes, self.revisions.len() as u64);
                 }
             }
             clients.ack(handle, &changes, self.revisions.len());
             self.revisions.push(changes);
         } else {
-            for r in self.revisions[revision..].iter() {
-                let (a_p, b_p) = r.transform(&changes).unwrap();
-                changes.transform(&b_p).ok();
+            // i think +1 here makes sense somehow...
+            for r in self.revisions[revision+1..].iter() {
+                println!("{:?} {:?}", r, changes);
+
+                let (a_p, _) = changes.transform(&r).unwrap();
+                changes = a_p;
+                //println!("OK");
+                //changes.transform(&b_p).ok();
             }
+            self.text = changes.apply(&self.text).unwrap();
+            for (i, c) in clients.0.iter_mut().enumerate() {
+                if i != handle {
+                    c.receive_changes(&changes, self.revisions.len() as u64);
+                }
+            }
+            clients.ack(handle, &changes, self.revisions.len());
+            self.revisions.push(changes)
         }
     }
 
