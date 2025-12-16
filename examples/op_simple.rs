@@ -1,79 +1,118 @@
 use operational_transform::*;
 
 fn main() {
-    let client_1 = Client::new();
-    let client_2 = Client::new();
+    let client_a = Client::new();
+    let client_b = Client::new();
     let mut server = Server::new();
     let mut clients = Clients::new();
-    let c_1_handle = clients.register_client(client_1);
-    let c_2_handle = clients.register_client(client_2);
+    let c_a_handle = clients.register_client(client_a);
+    let c_b_handle = clients.register_client(client_b);
 
-    // Client 1 makes some local changes (insert heklo at 0)
+    // Client A makes some local changes (insert heklo at 0)
     // and does not push them
-    clients.insert_at_cursor("heklo".to_string(), c_1_handle);
+    clients.insert_at_cursor("heklo".to_string(), c_a_handle);
 
-    // Client 2 makes some local changes and does not push them
-    clients.insert_at_cursor("bye".to_string(), c_2_handle);
+    // Client B makes some local changes and does not push them
+    clients.insert_at_cursor("bye".to_string(), c_b_handle);
 
-    println!("Client A state: {}", clients.content(c_1_handle));
-    println!("Client B state: {}", clients.content(c_2_handle));
+    println!("-------- CASE 1 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
 
-    // Client 1 makes more local changes (fix the typo, heklo -> hello)
-    clients.move_cursor(-2, c_1_handle);
-    clients.remove_at_cursor(c_1_handle);
-    clients.insert_at_cursor("l".to_string(), c_1_handle);
+    // Client A makes more local changes (fix the typo, heklo -> hello)
+    clients.move_cursor(-2, c_a_handle);
+    clients.remove_at_cursor(c_a_handle);
+    clients.insert_at_cursor("l".to_string(), c_a_handle);
 
-    println!("Client A state: {}", clients.content(c_1_handle));
-    println!("Client B state: {}", clients.content(c_2_handle));
+    println!("-------- CASE 2 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
 
-    // Client 1 now pushes changes to server.
-    let (c, r) = clients.push_current_changes(c_1_handle);
+    // Client A now pushes changes to server.
+    let (c, r) = clients.push_current_changes(c_a_handle);
     // The server receives the changes (i am manual plumbing this, this would be)
     // the callback on server-side or whatever
-    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+    server.receive_changes(c, r as usize, c_a_handle, &mut clients);
 
-    // Client 1 makes more changes (insert !! at end of "hello")
-    clients.move_cursor(10, c_1_handle); // Move cursor to the end just, this will overflow but
-    // that should be handled by the implementation
-    clients.insert_at_cursor("!!".to_string(), c_1_handle);
-   
-    // Client 1 pushes the changes (this should make client 2 fall even more behind)
-    let (c, r) = clients.push_current_changes(c_1_handle);
-    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
-
-
-    println!("Client A state: {}", clients.content(c_1_handle));
-    println!("Client B state: {}", clients.content(c_2_handle));
+    println!("-------- CASE 3 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
     println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
 
-    let (c, r) = clients.push_current_changes(c_2_handle);
-    server.receive_changes(c, r as usize, c_2_handle, &mut clients);
+    // Client A makes more changes (insert !! at end of "hello")
+    clients.move_cursor(10, c_a_handle); // Move cursor to the end just, this will overflow but
+    // that should be handled by the implementation
+    clients.insert_at_cursor("!!".to_string(), c_a_handle);
+   
+    // Client A pushes the changes (this should make client B fall even more behind)
+    let (c, r) = clients.push_current_changes(c_a_handle);
+    server.receive_changes(c, r as usize, c_a_handle, &mut clients);
 
+    println!("-------- CASE 4 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
+
+    // Client B now gets to push its changes
+    let (c, r) = clients.push_current_changes(c_b_handle);
+    server.receive_changes(c, r as usize, c_b_handle, &mut clients);
+
+    println!("-------- CASE 5 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
     // Edgecase here, assume that the client sends some changes, but before it receives an ACK,
     // the server receives something from another client, and "commits" that first
 
     // Client 2 removes the "bye" locally
-    clients.remove_at_cursor(c_2_handle);
-    clients.remove_at_cursor(c_2_handle);
-    clients.remove_at_cursor(c_2_handle);
+    clients.remove_at_cursor(c_b_handle);
+    clients.remove_at_cursor(c_b_handle);
+    clients.remove_at_cursor(c_b_handle);
 
+    // Push the changes to server clientside BUT DO NOT RECEIVE THEM AT SERVER ("LAG")
+    let (c_inflight, r_inflight) = clients.push_current_changes(c_b_handle);
 
-    let (c_inflight, r_inflight) = clients.push_current_changes(c_2_handle);
+    println!("-------- CASE 6 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
 
     // Again, move Client A cursor as far to the right as possible
-    clients.move_cursor(10, c_1_handle);
+    clients.move_cursor(10, c_a_handle);
     // Remove one of the exclamation marks 
-    clients.remove_at_cursor(c_1_handle);
+    clients.remove_at_cursor(c_a_handle);
     // Push the changes to server and receive them
-    let (c, r) = clients.push_current_changes(c_1_handle);
-    server.receive_changes(c, r as usize, c_1_handle, &mut clients);
+    let (c, r) = clients.push_current_changes(c_a_handle);
+    server.receive_changes(c, r as usize, c_a_handle, &mut clients);
 
-    server.receive_changes(c_inflight, r_inflight as usize, c_2_handle, &mut clients);
-
-    println!("Final: ");
-    println!("Client 1 state: {}", clients.content(c_1_handle));
-    println!("Client 2 state: {}", clients.content(c_2_handle));
+    println!("-------- CASE 7 --------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
     println!("Server state: {}", server.content());
+    println!("------- END CASE -------");
+
+    // Receive the (late) changes from client B at server
+    server.receive_changes(c_inflight, r_inflight as usize, c_b_handle, &mut clients);
+
+    println!("------ FINAL STATE ------");
+    println!("Client A state: {}", clients.content(c_a_handle));
+    println!("Client B state: {}", clients.content(c_b_handle));
+    println!("Server state: {}", server.content());
+    println!("---- END FINAL STATE ----");
+
+    // Now for the example from the article:
+    let server = Server::new();
+    let client_a = Client::new();
+    let client_b = Client::new();
+    let clients = Clients::new();
 }
 #[derive(Clone)]
 struct Client {
@@ -186,7 +225,6 @@ impl Server {
         } else {
             // i think +1 here makes sense somehow...
             for r in self.revisions[revision+1..].iter() {
-                println!("{:?} {:?}", r, changes);
 
                 let (a_p, _) = changes.transform(&r).unwrap();
                 changes = a_p;
