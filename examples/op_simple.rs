@@ -146,9 +146,6 @@ impl Server {
         clients: &mut Clients,
     ) {
         if revision == self.revisions.len() {
-            for op in &self.revisions[revision..] {
-                changes = changes.transform(&op).unwrap().0;
-            }
             self.text = changes.apply(&self.text).unwrap();
             for (i, c) in clients.0.iter_mut().enumerate() {
                 if i != handle {
